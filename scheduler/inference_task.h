@@ -66,6 +66,33 @@ struct InferenceTask {
         pthread_mutex_unlock(&mutex);
     }
 
+    // 带超时的阻塞等待，timeout_ms 毫秒
+    // 返回 true=正常完成，false=超时
+    bool wait_with_timeout_ms(int timeout_ms)
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += timeout_ms / 1000;
+        ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec += 1;
+            ts.tv_nsec -= 1000000000;
+        }
+
+        pthread_mutex_lock(&mutex);
+        while (!completed) {
+            int rc = pthread_cond_timedwait(&cond, &mutex, &ts);
+            if (rc == ETIMEDOUT) {
+                timeout = true;
+                completed = true;
+                pthread_mutex_unlock(&mutex);
+                return false;
+            }
+        }
+        pthread_mutex_unlock(&mutex);
+        return !timeout;
+    }
+
     // 标记完成并唤醒等待线程
     void mark_done()
     {

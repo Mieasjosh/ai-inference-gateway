@@ -2,6 +2,10 @@
 
 WebServer::WebServer()
 {
+    m_engine_latency_ms = 50;
+    m_batch_window_ms = 10;
+    m_max_batch_size = 8;
+
     users = new http_conn[MAX_FD];
 
     char server_path[200];
@@ -67,12 +71,12 @@ void WebServer::thread_pool()
     m_pool = new threadpool<http_conn>(m_actormodel, m_thread_num);
 
     // ===== 初始化推理引擎 + 调度器 =====
-    m_engine.set_latency_ms(50);       // 模拟 50ms 推理延迟
+    m_engine.set_latency_ms(m_engine_latency_ms);
     m_engine.set_io_size(4, 4);        // 输入 4 个 float，输出 4 个 float
     m_engine.init("mock_model");
 
-    m_scheduler.set_batch_window_ms(10);
-    m_scheduler.set_max_batch_size(8);
+    m_scheduler.set_batch_window_ms(m_batch_window_ms);
+    m_scheduler.set_max_batch_size(m_max_batch_size);
     m_scheduler.set_max_concurrent_batches(2);
     m_scheduler.start(&m_engine);
 

@@ -36,6 +36,7 @@ public:
     int batch_window_ms;     // 攒 batch 最大等待时间（毫秒）
     int max_batch_size;      // 单批最大请求数
     int engine_latency_ms;   // 模拟推理引擎延迟（毫秒）
+    int task_timeout_sec;    // 推理任务超时时间（秒）
 
     //线程池内的线程数量
     int thread_num;

@@ -131,6 +131,7 @@ public:
     static int m_epollfd;
     static int m_user_count;
     static BatchScheduler *scheduler;    // 推理任务调度器（全局唯一实例）
+    static int task_timeout_sec;         // 推理任务超时时间（秒）
     int m_state; //读为0，写为1
 
 private:

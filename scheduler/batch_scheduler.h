@@ -56,6 +56,9 @@ private:
     static void *scheduler_thread(void *arg);
     void run();
 
+    // 扫描三个优先级队列，标记并移除所有 deadline < now 的任务
+    void cleanup_expired();
+
     // 从各优先级队列中取任务组成一个 batch
     // 返回 nullptr 表示当前没有待处理任务
     std::vector<InferenceTask *> collect_batch();

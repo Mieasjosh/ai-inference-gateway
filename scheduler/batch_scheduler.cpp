@@ -69,6 +69,33 @@ int BatchScheduler::pending_count() const
     return count;
 }
 
+// === 过期任务清理 ===
+
+void BatchScheduler::cleanup_expired()
+{
+    time_t now = time(nullptr);
+    queue_lock_.lock();
+
+    auto clean = [&](std::deque<InferenceTask *> &q) {
+        auto it = q.begin();
+        while (it != q.end()) {
+            if ((*it)->deadline > 0 && (*it)->deadline < now) {
+                (*it)->timeout = true;
+                (*it)->mark_done();
+                it = q.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    };
+
+    clean(queue_high_);
+    clean(queue_mid_);
+    clean(queue_low_);
+
+    queue_lock_.unlock();
+}
+
 // === 调度线程入口 ===
 
 void *BatchScheduler::scheduler_thread(void *arg)
@@ -80,16 +107,15 @@ void *BatchScheduler::scheduler_thread(void *arg)
 
 void BatchScheduler::run()
 {
-    // batch_window 对应的微秒
-    int window_us = batch_window_ms_ * 1000;
-
     while (running_) {
-        // 等待第一个任务到达（带超时：没有任务时不消耗 CPU）
-        // 如果有正在执行的 batch，减小等待时间以允许快速响应
+        // 带超时等待：没有任务时每隔 batch_window_ms_ 醒来清理过期任务
         int wait_ms = (active_batch_count_ > 0) ? batch_window_ms_ : 500;
-        queue_sem_.wait();  // TODO: 改用 timedwait，目前用 wait 简化
+        queue_sem_.timedwait(wait_ms);
 
         if (!running_) break;
+
+        // 清理队列中已过期的任务
+        cleanup_expired();
 
         std::vector<InferenceTask *> batch = collect_batch();
         if (!batch.empty()) {
@@ -107,6 +133,20 @@ void BatchScheduler::run()
                 break;
             }
 
+            // 提交前过滤已过期任务
+            time_t now = time(nullptr);
+            std::vector<InferenceTask *> valid_batch;
+            for (auto *t : batch) {
+                if (t->deadline > 0 && t->deadline < now) {
+                    t->timeout = true;
+                    t->mark_done();
+                } else {
+                    valid_batch.push_back(t);
+                }
+            }
+
+            if (valid_batch.empty()) continue;  // 全部过期，跳过本轮
+
             // 提交 batch 给推理引擎（在新线程中执行，避免阻塞调度循环）
             queue_lock_.lock();
             ++active_batch_count_;
@@ -114,7 +154,7 @@ void BatchScheduler::run()
 
             // 创建临时线程执行推理（TODO: 改为从线程池取线程）
             std::vector<InferenceTask *> *batch_copy =
-                new std::vector<InferenceTask *>(batch);
+                new std::vector<InferenceTask *>(valid_batch);
             pthread_t exec_thread;
             pthread_create(&exec_thread, nullptr,
                 [](void *arg) -> void * {
@@ -157,6 +197,7 @@ std::vector<InferenceTask *> BatchScheduler::collect_batch()
 
 void BatchScheduler::execute_batch(const std::vector<InferenceTask *> &batch)
 {
+    // 此时 batch 已在 run() 中过滤过过期任务，直接处理
     if (!engine_ || batch.empty()) {
         queue_lock_.lock();
         --active_batch_count_;

@@ -68,6 +68,9 @@ public:
     Utils utils;
 
     // 推理调度相关
+    int m_engine_latency_ms;         // 模拟推理延迟
+    int m_batch_window_ms;           // 批处理窗口
+    int m_max_batch_size;            // 最大批大小
     MockEngine m_engine;             // 模拟推理引擎（阶段三可替换为 OnnxEngine）
     BatchScheduler m_scheduler;      // 动态批处理调度器
 };

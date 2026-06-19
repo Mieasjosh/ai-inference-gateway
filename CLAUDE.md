@@ -96,7 +96,7 @@ HTTP 请求处理流程:
     → writev() 发送响应，epoll 监听到写就绪
 ```
 
-**已连线：** `/infer` → `do_request()` 解析 JSON body → 创建 `InferenceTask` → `scheduler->enqueue()` + `task.wait()` → `BatchScheduler` 攒 batch → `MockEngine::infer_batch()` → 唤醒 worker → 写 JSON 响应。
+**已连线：** `/infer` → `do_request()` 解析 JSON body → 创建 `InferenceTask`（设置 deadline）→ `scheduler->enqueue()` + `task.wait_with_timeout_ms()` → `BatchScheduler` 攒 batch → deadline 过滤 → `MockEngine::infer_batch()` → 唤醒 worker → 写 JSON 响应。超时任务返回 `{"status":"error","msg":"inference timeout"}`。
 
 ## 与原 web_server 的差异
 
@@ -112,16 +112,17 @@ HTTP 请求处理流程:
 | http_conn | `init()` 去掉了 user/passwd/sqlname 参数；`do_request()` 从文件/CGI 路由改为 `/infer` API 路由；去掉 upload 解析头 |
 | webserver | `init()` 去掉了数据库参数；`sql_pool()` 移除；构造函数不再初始化 upload_dir |
 | threadpool | 构造函数去掉 `connection_pool*`；`run()` 里去掉 `connectionRAII` |
-| config | `sql_num` 改为 `batch_window_ms` / `max_batch_size` / `engine_latency_ms` |
+| config | `sql_num` 改为 `batch_window_ms` / `max_batch_size` / `engine_latency_ms` / `task_timeout_sec`；命令行新增 `-b` `-n` `-s` `-T` |
 | main.cpp | 去掉数据库连接字符串；不再调用 `sql_pool()` |
 
 ## 线程模型
 
 - **主线程**：`eventLoop()` 跑 epoll_wait，分发 I/O 事件，处理 accept/信号/定时器
 - **worker 线程**（线程池）：执行 `http_conn::process()`（HTTP 解析 + 业务处理），通过 EPOLLONESHOT 保证同一 fd 不被多线程同时处理
-- **调度线程**（待连线）：`BatchScheduler::run()`，从优先级队列取任务、组 batch、调用引擎推理、唤醒 worker
+- **调度线程**：`BatchScheduler::run()`，从三级优先级队列取任务、组 batch、deadline 过滤、调用引擎推理、唤醒 worker。通过 `sem_timedwait()` 定期醒来清理过期任务（`cleanup_expired()`）
+- **exec 线程**（临时）：每个 batch 由独立 pthread 执行推理，避免阻塞调度循环
 
-worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信：worker 投递任务后 `task->wait()` 阻塞；调度线程推理完成后 `task->mark_done()` 唤醒。
+worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信：worker 投递任务后 `task->wait_with_timeout_ms()` 阻塞等待（最多等 `task_timeout_sec` 秒）；调度线程推理完成后 `task->mark_done()` 唤醒。若超时，worker 侧 `pthread_cond_timedwait` 返回 `ETIMEDOUT`，调度器侧 `cleanup_expired()` / deadline 过滤也会标记超时并唤醒。
 
 ## 当前状态与实现计划
 
@@ -131,9 +132,10 @@ worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信
 - ✅ 完整链路已验证：单请求、顺序请求、并发批处理均返回正确结果
 - ✅ `http_conn::do_request()` → `BatchScheduler` → `MockEngine` 完整连线
 - ✅ **阶段三完成**：`OnnxEngine`（支持条件编译 stub/真实 onnxruntime）+ `ModelManager`（多模型路由）
+- ✅ **超时控制**：Worker 侧 `pthread_cond_timedwait` + Scheduler 侧 `cleanup_expired()` / deadline 过滤，毫秒级精度。配置项 `task_timeout_sec`（默认 30s，`-T` 参数）。未复用 lst_timer（lst_timer 是连接级超时，精度 5s 不适合任务级）
+- ✅ **config→engine 配置链路**：`engine_latency_ms`/`batch_window_ms`/`max_batch_size` 不再硬编码，由 Config → WebServer 成员 → 引擎/调度器
 
 ### 待实现
-- [ ] 超时控制（复用 lst_timer）
 - [ ] 优先级调度验证
 - [ ] 并发限流
 - [ ] 压测对比（单请求 vs 批处理 QPS）

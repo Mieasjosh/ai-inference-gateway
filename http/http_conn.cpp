@@ -20,6 +20,7 @@ const char *error_500_form = "There was an unusual problem serving the request f
 int http_conn::m_user_count = 0;
 int http_conn::m_epollfd = -1;
 BatchScheduler *http_conn::scheduler = nullptr;
+int http_conn::task_timeout_sec = 30;
 
 // ===== 简易 JSON 解析（无第三方依赖） =====
 
@@ -371,12 +372,12 @@ http_conn::HTTP_CODE http_conn::do_request()
     task.model_name = model ? model : "default";
     task.input_data = std::move(input_data);
     task.priority = 1;          // 默认中优先级
-    task.deadline = time(nullptr) + 30;  // 30 秒超时
+    task.deadline = time(nullptr) + task_timeout_sec;
     task.client_fd = m_sockfd;
 
-    // 3. 投递到调度器，阻塞等待结果
+    // 3. 投递到调度器，阻塞等待结果（带超时）
     scheduler->enqueue(&task);
-    task.wait();
+    task.wait_with_timeout_ms(task_timeout_sec * 1000);
 
     // 4. 构造 JSON 响应
     if (task.timeout) {
