@@ -47,6 +47,22 @@ static std::string json_get_string(char *json, const char *key)
     return std::string(start, end - start);
 }
 
+// 从 JSON 字符串中提取整数值：搜 "\"key\":" → 跳过空格 → 解析整数
+static int json_get_int(char *json, const char *key, int default_val = 0)
+{
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    char *start = strstr(json, search);
+    if (!start) return default_val;
+    start += strlen(search);
+    start = skip_ws(start);
+    if (*start < '0' || *start > '9') return default_val;
+    char *end;
+    long val = strtol(start, &end, 10);
+    if (end == start) return default_val;
+    return static_cast<int>(val);
+}
+
 // 从 JSON 字符串中提取浮点数组：搜 "\"key\":" → 跳过空格 → "[" → 解析
 static std::vector<float> json_get_float_array(char *json, const char *key)
 {
@@ -366,7 +382,7 @@ http_conn::HTTP_CODE http_conn::do_request()
     InferenceTask task;
     task.model_name = model_name.empty() ? "default" : model_name;
     task.input_data = std::move(input_data);
-    task.priority = 1;          // 默认中优先级
+    task.priority = json_get_int(body, "priority", 1);  // 0=高 1=中 2=低，默认中
     task.deadline = time(nullptr) + task_timeout_sec;
     task.client_fd = m_sockfd;
 

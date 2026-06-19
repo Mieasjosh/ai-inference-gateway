@@ -108,7 +108,8 @@ void *BatchScheduler::scheduler_thread(void *arg)
 void BatchScheduler::run()
 {
     while (running_) {
-        // 带超时等待：没有任务时每隔 batch_window_ms_ 醒来清理过期任务
+        // 带超时等待：没有任务时每隔 500ms 醒来清理过期任务；
+        // 有活跃 batch 时以 batch_window_ms_ 为周期检查
         int wait_ms = (active_batch_count_ > 0) ? batch_window_ms_ : 500;
         queue_sem_.timedwait(wait_ms);
 
@@ -116,6 +117,15 @@ void BatchScheduler::run()
 
         // 清理队列中已过期的任务
         cleanup_expired();
+
+        // 积累窗口：当无活跃 batch 且队列非空时，等待 batch_window_ms_
+        // 让并发到达的任务充分入队，使优先级排序和批处理最大化生效
+        // 注意：这是首次任务后的刻意等待，批量调度的核心权衡（延迟换吞吐）
+        if (active_batch_count_ == 0 && pending_count() > 0) {
+            usleep(batch_window_ms_ * 1000);
+            if (!running_) break;
+            cleanup_expired();
+        }
 
         std::vector<InferenceTask *> batch = collect_batch();
         if (!batch.empty()) {
