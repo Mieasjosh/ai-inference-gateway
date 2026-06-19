@@ -107,7 +107,7 @@ worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信
 ### 已完成
 - ✅ 项目骨架编译通过，生成 `ai_gateway` 二进制
 - ✅ 所有新模块（engine / scheduler / memory / common）已实现
-- ✅ HTTP 解析层改造完成，`/infer` 路由可用
+- ✅ 完整链路已验证：单请求、顺序请求、并发批处理均返回正确结果
 
 ### 待实现
 - [ ] 将 `http_conn::do_request()` 与 `BatchScheduler` + `MockEngine` 连线

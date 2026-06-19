@@ -1,3 +1,4 @@
 ai_gateway
 server
 *.o
+*_Serverlog

@@ -329,12 +329,12 @@ http_conn::HTTP_CODE http_conn::do_request()
         return NO_RESOURCE;
     }
 
-    // 提取 POST body（紧跟在 headers 的 \r\n\r\n 之后）
-    char *body = strstr(m_read_buf, "\r\n\r\n");
-    if (!body || m_content_length <= 0) {
+    // 提取 POST body
+    // HTTP 解析器已把 \r\n 替换为 \0，解析完成后 m_start_line 指向 body 起始位置
+    if (m_content_length <= 0) {
         return BAD_REQUEST;
     }
-    body += 4;
+    char *body = m_read_buf + m_start_line;
 
     // 如果调度器未初始化，回退到错误响应
     if (!scheduler) {

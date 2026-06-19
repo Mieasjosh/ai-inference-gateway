@@ -1,0 +1,125 @@
+2026-06-19 21:25:33.487463 [info]: adjust timer once
+2026-06-19 21:25:33.489540 [info]: close fd 9
+2026-06-19 21:25:36.490262 [info]: timer tick
+2026-06-19 21:25:41.490479 [info]: timer tick
+2026-06-19 21:25:46.490608 [info]: timer tick
+2026-06-19 21:25:51.490722 [info]: timer tick
+2026-06-19 21:25:56.491049 [info]: timer tick
+2026-06-19 21:26:01.491164 [info]: timer tick
+2026-06-19 21:26:06.491492 [info]: timer tick
+2026-06-19 21:26:11.491615 [info]: timer tick
+2026-06-19 21:26:16.491911 [info]: timer tick
+2026-06-19 21:26:21.492102 [info]: timer tick
+2026-06-19 21:26:26.492203 [info]: timer tick
+2026-06-19 21:26:31.492424 [info]: timer tick
+2026-06-19 21:26:36.492556 [info]: timer tick
+2026-06-19 21:26:41.492878 [info]: timer tick
+2026-06-19 21:26:46.493095 [info]: timer tick
+2026-06-19 21:26:51.493280 [info]: timer tick
+2026-06-19 21:26:56.493388 [info]: timer tick
+2026-06-19 21:27:01.493610 [info]: timer tick
+2026-06-19 21:27:06.493814 [info]: timer tick
+2026-06-19 21:27:11.494006 [info]: timer tick
+2026-06-19 21:27:16.494410 [info]: timer tick
+2026-06-19 21:27:21.494736 [info]: timer tick
+2026-06-19 21:27:26.494952 [info]: timer tick
+2026-06-19 21:27:31.495071 [info]: timer tick
+2026-06-19 21:27:36.495288 [info]: timer tick
+2026-06-19 21:27:41.495965 [info]: timer tick
+2026-06-19 21:27:46.495992 [info]: timer tick
+2026-06-19 21:27:51.496427 [info]: timer tick
+2026-06-19 21:29:00.043658 [info]: timer tick
+2026-06-19 21:29:05.044014 [info]: timer tick
+2026-06-19 21:29:10.044363 [info]: timer tick
+2026-06-19 21:29:12.152146 [info]: adjust timer once
+2026-06-19 21:29:12.202920 [info]: close fd 8
+2026-06-19 21:29:15.044719 [info]: timer tick
+2026-06-19 21:29:19.836157 [info]: adjust timer once
+2026-06-19 21:29:19.837408 [info]: adjust timer once
+2026-06-19 21:29:19.838032 [info]: adjust timer once
+2026-06-19 21:29:19.886691 [info]: close fd 8
+2026-06-19 21:29:19.888079 [info]: close fd 9
+2026-06-19 21:29:19.938565 [info]: close fd 10
+2026-06-19 21:29:20.045065 [info]: timer tick
+2026-06-19 21:29:25.045398 [info]: timer tick
+2026-06-19 21:29:30.045515 [info]: timer tick
+2026-06-19 21:29:35.045857 [info]: timer tick
+2026-06-19 21:29:40.046090 [info]: timer tick
+2026-06-19 21:29:45.046512 [info]: timer tick
+2026-06-19 21:29:50.046948 [info]: timer tick
+2026-06-19 21:29:55.047358 [info]: timer tick
+2026-06-19 21:30:00.047689 [info]: timer tick
+2026-06-19 21:30:05.048044 [info]: timer tick
+2026-06-19 21:30:10.048384 [info]: timer tick
+2026-06-19 21:30:15.048670 [info]: timer tick
+2026-06-19 21:30:20.049005 [info]: timer tick
+2026-06-19 21:30:25.049433 [info]: timer tick
+2026-06-19 21:30:30.049764 [info]: timer tick
+2026-06-19 21:30:35.050179 [info]: timer tick
+2026-06-19 21:30:40.050614 [info]: timer tick
+2026-06-19 21:30:45.051010 [info]: timer tick
+2026-06-19 21:30:50.051256 [info]: timer tick
+2026-06-19 21:30:55.051575 [info]: timer tick
+2026-06-19 21:31:00.051978 [info]: timer tick
+2026-06-19 21:31:05.052357 [info]: timer tick
+2026-06-19 21:31:10.052568 [info]: timer tick
+2026-06-19 21:31:15.053021 [info]: timer tick
+2026-06-19 21:31:20.053370 [info]: timer tick
+2026-06-19 21:31:25.053669 [info]: timer tick
+2026-06-19 21:31:30.054031 [info]: timer tick
+2026-06-19 21:31:35.054483 [info]: timer tick
+2026-06-19 21:31:40.054935 [info]: timer tick
+2026-06-19 21:31:45.055387 [info]: timer tick
+2026-06-19 21:31:50.055836 [info]: timer tick
+2026-06-19 21:31:55.056280 [info]: timer tick
+2026-06-19 21:32:00.056555 [info]: timer tick
+2026-06-19 21:32:05.056740 [info]: timer tick
+2026-06-19 21:32:10.056918 [info]: timer tick
+2026-06-19 21:32:15.057223 [info]: timer tick
+2026-06-19 21:32:19.355367 [info]: adjust timer once
+2026-06-19 21:32:19.406071 [info]: close fd 8
+2026-06-19 21:32:20.057540 [info]: timer tick
+2026-06-19 21:32:25.057735 [info]: timer tick
+2026-06-19 21:32:30.057986 [info]: timer tick
+2026-06-19 21:32:35.058276 [info]: timer tick
+2026-06-19 21:32:40.058442 [info]: timer tick
+2026-06-19 21:32:45.058775 [info]: timer tick
+2026-06-19 21:32:50.059096 [info]: timer tick
+2026-06-19 21:32:55.059552 [info]: timer tick
+2026-06-19 21:32:55.738730 [info]: adjust timer once
+2026-06-19 21:32:55.789454 [info]: close fd 8
+2026-06-19 21:32:55.794709 [info]: adjust timer once
+2026-06-19 21:32:55.845685 [info]: close fd 8
+2026-06-19 21:32:55.851036 [info]: adjust timer once
+2026-06-19 21:32:55.901963 [info]: close fd 8
+2026-06-19 21:33:00.059768 [info]: timer tick
+2026-06-19 21:33:05.060022 [info]: timer tick
+2026-06-19 21:33:10.060183 [info]: timer tick
+2026-06-19 21:33:15.060293 [info]: timer tick
+2026-06-19 21:33:20.060522 [info]: timer tick
+2026-06-19 21:33:25.060740 [info]: timer tick
+2026-06-19 21:33:30.061027 [info]: timer tick
+2026-06-19 21:33:35.061132 [info]: timer tick
+2026-06-19 21:34:42.425179 [info]: timer tick
+2026-06-19 21:34:47.425501 [info]: timer tick
+2026-06-19 21:34:51.782717 [info]: adjust timer once
+2026-06-19 21:34:51.833617 [info]: close fd 8
+2026-06-19 21:34:52.425967 [info]: timer tick
+2026-06-19 21:34:57.426089 [info]: timer tick
+2026-06-19 21:34:58.474871 [info]: adjust timer once
+2026-06-19 21:34:58.525671 [info]: close fd 8
+2026-06-19 21:34:59.535890 [info]: adjust timer once
+2026-06-19 21:34:59.586826 [info]: close fd 8
+2026-06-19 21:35:00.597433 [info]: adjust timer once
+2026-06-19 21:35:00.648548 [info]: close fd 8
+2026-06-19 21:35:02.426453 [info]: timer tick
+2026-06-19 21:35:07.426716 [info]: timer tick
+2026-06-19 21:35:09.485148 [info]: adjust timer once
+2026-06-19 21:35:09.485749 [info]: adjust timer once
+2026-06-19 21:35:09.486192 [info]: adjust timer once
+2026-06-19 21:35:09.535797 [info]: close fd 8
+2026-06-19 21:35:09.536448 [info]: close fd 9
+2026-06-19 21:35:09.586403 [info]: close fd 10
+2026-06-19 21:35:12.427115 [info]: timer tick
+2026-06-19 21:35:17.427316 [info]: timer tick
+2026-06-19 21:35:22.427708 [info]: timer tick
