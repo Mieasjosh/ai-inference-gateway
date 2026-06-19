@@ -23,15 +23,25 @@ BatchScheduler *http_conn::scheduler = nullptr;
 
 // ===== 简易 JSON 解析（无第三方依赖） =====
 
-// 从 JSON 字符串中提取字符串值：搜 "\"key\":\"" → 返回 value
+// 跳过空白字符，返回第一个非空白字符的位置
+static inline char *skip_ws(char *p)
+{
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
+    return p;
+}
+
+// 从 JSON 字符串中提取字符串值：搜 "\"key\":" → 跳过空格 → "\"value\""
 static char *json_get_string(char *json, const char *key)
 {
     static char buf[256];
     char search[128];
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
+    snprintf(search, sizeof(search), "\"%s\":", key);
     char *start = strstr(json, search);
     if (!start) return nullptr;
     start += strlen(search);
+    start = skip_ws(start);          // 跳过 : 后的空格
+    if (*start != '"') return nullptr;
+    ++start;                         // 跳过开头引号
     char *end = strchr(start, '"');
     if (!end) return nullptr;
     size_t len = end - start;
@@ -41,15 +51,18 @@ static char *json_get_string(char *json, const char *key)
     return buf;
 }
 
-// 从 JSON 字符串中提取浮点数组：搜 "\"key\":[" → 解析到 vector
+// 从 JSON 字符串中提取浮点数组：搜 "\"key\":" → 跳过空格 → "[" → 解析
 static std::vector<float> json_get_float_array(char *json, const char *key)
 {
     std::vector<float> result;
     char search[128];
-    snprintf(search, sizeof(search), "\"%s\":[", key);
+    snprintf(search, sizeof(search), "\"%s\":", key);
     char *start = strstr(json, search);
     if (!start) return result;
     start += strlen(search);
+    start = skip_ws(start);          // 跳过 : 后的空格
+    if (*start != '[') return result;
+    ++start;                         // 跳过 [
 
     // 逐个解析逗号分隔的浮点数，直到遇到 ]
     while (*start && *start != ']') {
