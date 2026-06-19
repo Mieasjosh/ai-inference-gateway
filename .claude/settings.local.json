@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Bash(npm *)",
+      "Bash(git *)",
+      "Bash(node *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(npx next *)",
+      "Bash(curl -s http://localhost:3000/api/cart)",
+      "Bash(curl -s -c /tmp/cart_test.txt -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test@minimall.com\",\"password\":\"user123\"}')",
+      "Bash(curl -s -b /tmp/cart_test.txt http://localhost:3000/api/cart)",
+      "Bash(curl -s -b /tmp/cart_test.txt -X POST http://localhost:3000/api/cart -H 'Content-Type: application/json' -d '{\"productId\":1,\"quantity\":2}')",
+      "Bash(curl -s -b /tmp/cart_test.txt -X POST http://localhost:3000/api/cart -H 'Content-Type: application/json' -d '{\"productId\":2,\"quantity\":1}')",
+      "Bash(curl -s -b /tmp/cart_test.txt -X POST http://localhost:3000/api/cart -H 'Content-Type: application/json' -d '{\"productId\":1,\"quantity\":1}')",
+      "Bash(curl -s -b /tmp/cart_test.txt -X POST http://localhost:3000/api/cart -H 'Content-Type: application/json' -d '{\"productId\":1,\"quantity\":9999}')",
+      "Bash(curl -s -b /tmp/cart_test.txt http://localhost:3000/cart)",
+      "Bash(curl -sI http://localhost:3000/cart)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)"
+    ]
+  },
+  "autoCompactThreshold": 80
+}
