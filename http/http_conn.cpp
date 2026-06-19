@@ -32,24 +32,19 @@ static inline char *skip_ws(char *p)
 }
 
 // 从 JSON 字符串中提取字符串值：搜 "\"key\":" → 跳过空格 → "\"value\""
-static char *json_get_string(char *json, const char *key)
+static std::string json_get_string(char *json, const char *key)
 {
-    static char buf[256];
     char search[128];
     snprintf(search, sizeof(search), "\"%s\":", key);
     char *start = strstr(json, search);
-    if (!start) return nullptr;
+    if (!start) return "";
     start += strlen(search);
     start = skip_ws(start);          // 跳过 : 后的空格
-    if (*start != '"') return nullptr;
+    if (*start != '"') return "";
     ++start;                         // 跳过开头引号
     char *end = strchr(start, '"');
-    if (!end) return nullptr;
-    size_t len = end - start;
-    if (len > sizeof(buf) - 1) len = sizeof(buf) - 1;
-    memcpy(buf, start, len);
-    buf[len] = '\0';
-    return buf;
+    if (!end) return "";
+    return std::string(start, end - start);
 }
 
 // 从 JSON 字符串中提取浮点数组：搜 "\"key\":" → 跳过空格 → "[" → 解析
@@ -359,7 +354,7 @@ http_conn::HTTP_CODE http_conn::do_request()
 
     // 1. 解析 JSON 请求体
     std::vector<float> input_data = json_get_float_array(body, "input");
-    char *model = json_get_string(body, "model");
+    std::string model_name = json_get_string(body, "model");
 
     if (input_data.empty()) {
         snprintf(m_response_body, sizeof(m_response_body),
@@ -369,7 +364,7 @@ http_conn::HTTP_CODE http_conn::do_request()
 
     // 2. 创建推理任务
     InferenceTask task;
-    task.model_name = model ? model : "default";
+    task.model_name = model_name.empty() ? "default" : model_name;
     task.input_data = std::move(input_data);
     task.priority = 1;          // 默认中优先级
     task.deadline = time(nullptr) + task_timeout_sec;
