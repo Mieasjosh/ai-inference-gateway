@@ -2,3 +2,5 @@ ai_gateway
 server
 *.o
 *_Serverlog
+onnxruntime-linux-x64-*
+test_model.onnx

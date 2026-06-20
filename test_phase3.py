@@ -9,6 +9,12 @@ import sys
 import subprocess
 import os
 
+# 确保运行时链接器能找到 onnxruntime 动态库
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+ONNX_LIB_DIR = os.path.join(PROJECT_DIR, "onnxruntime-linux-x64-1.19.2", "lib")
+if os.path.isdir(ONNX_LIB_DIR):
+    os.environ["LD_LIBRARY_PATH"] = ONNX_LIB_DIR + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+
 URL = "http://127.0.0.1:9999/infer"
 PASS = 0
 FAIL = 0
@@ -340,6 +346,57 @@ try:
 
 finally:
     kill_server(cb_proc)
+
+# === 10. ONNX Runtime 真实推理 ===
+print("\n=== 10. ONNX Runtime 真实推理测试 ===")
+ONNX_URL = "http://127.0.0.1:9993/infer"
+ONNX_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_model.onnx")
+
+if not os.path.exists(ONNX_MODEL):
+    print("  跳过：test_model.onnx 不存在（需先在 Windows 端运行 python -c \"import onnx...\" 生成）")
+else:
+    print(f"  启动 ONNX 引擎服务 (model={ONNX_MODEL})...")
+    onnx_proc = subprocess.Popen(
+        [exe, "-p", "9993", "-t", "4", "-E", "onnx", "-M", ONNX_MODEL,
+         "-b", "20", "-T", "30", "-c", "1"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5)
+
+    try:
+        # 10a. 单请求
+        data = json.dumps({"model": "onnx", "input": [1.0, 2.0, 3.0, 4.0]},
+                          separators=(',', ':')).encode()
+        req = urllib.request.Request(ONNX_URL, data=data,
+            headers={"Content-Type": "application/json"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        r = json.loads(resp.read())
+        print(f"  单请求: {json.dumps(r)}")
+        check("ONNX-单请求成功", r.get("status") == "ok",
+              f"got {r.get('status')}")
+        check("ONNX-输出=input×2", r.get("output") == [2.0, 4.0, 6.0, 8.0],
+              f"got {r.get('output')}")
+
+        # 10b. 并发批处理（5个请求，验证批处理在 ONNX 引擎上也能工作）
+        def infer_onnx(payload):
+            data = json.dumps(payload, separators=(',', ':')).encode()
+            req = urllib.request.Request(ONNX_URL, data=data,
+                headers={"Content-Type": "application/json"})
+            resp = urllib.request.urlopen(req, timeout=10)
+            return json.loads(resp.read())
+        payload = {"model": "onnx", "input": [1.0, 2.0, 3.0, 4.0]}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+            futures = [ex.submit(infer_onnx, payload) for _ in range(5)]
+            results = [f.result() for f in futures]
+        success_count = sum(1 for r in results if r.get("status") == "ok")
+        check("ONNX-并发5个全部成功", success_count == 5,
+              f"{success_count}/5")
+        correct = sum(1 for r in results
+                      if r.get("output") == [2.0, 4.0, 6.0, 8.0])
+        check("ONNX-所有输出正确", correct == 5,
+              f"{correct}/5 correct")
+
+    finally:
+        kill_server(onnx_proc)
 
 # === 结果 ===
 print(f"\n{'='*40}")

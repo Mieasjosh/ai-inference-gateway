@@ -16,6 +16,7 @@
 #include "./http/http_conn.h"
 #include "./scheduler/batch_scheduler.h"
 #include "./engine/mock_engine.h"
+#include "./engine/onnx_engine.h"
 
 const int MAX_FD=65536;//最大文件描述符
 const int MAX_EVENT_NUMBER=10000;//epoll 内核事件表能监听的最大事件数
@@ -68,12 +69,21 @@ public:
     Utils utils;
 
     // 推理调度相关
-    int m_engine_latency_ms;         // 模拟推理延迟
+    int m_engine_latency_ms;         // 模拟推理延迟（仅 MockEngine 使用）
     int m_batch_window_ms;           // 批处理窗口
     int m_max_batch_size;            // 最大批大小
     int m_max_concurrent_batches;    // 最大并发 batch 数
     int m_max_queue_size;            // 调度队列最大长度
-    MockEngine m_engine;             // 模拟推理引擎（阶段三可替换为 OnnxEngine）
+
+    // 引擎选择
+    char *m_engine_type;             // "mock" 或 "onnx"
+    char *m_model_path;              // ONNX 模型路径
+
+    // 推理引擎（双引擎，运行时根据 engine_type 选择）
+    MockEngine m_mock_engine;
+    OnnxEngine m_onnx_engine;
+    IInferenceEngine *m_engine;      // 指向上述两者之一
+
     BatchScheduler m_scheduler;      // 动态批处理调度器
 };
 

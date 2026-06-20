@@ -81,7 +81,7 @@ private:
     std::unique_ptr<Ort::MemoryInfo> memory_info_;
     std::unique_ptr<Ort::RunOptions> run_opts_;
 
-    // 输入/输出节点名（C 字符串，由 Ort::Allocator 管理）
+    // 输入/输出节点名（C 字符串副本，independent lifetime）
     std::unique_ptr<char[]> input_name_buf_;
     std::unique_ptr<char[]> output_name_buf_;
     const char *input_name_;   // 指向 input_name_buf_.get()

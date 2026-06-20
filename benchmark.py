@@ -10,7 +10,12 @@ import subprocess
 import os
 import argparse
 
-EXE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_gateway")
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+ONNX_LIB_DIR = os.path.join(PROJECT_DIR, "onnxruntime-linux-x64-1.19.2", "lib")
+if os.path.isdir(ONNX_LIB_DIR):
+    os.environ["LD_LIBRARY_PATH"] = ONNX_LIB_DIR + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+
+EXE = os.path.join(PROJECT_DIR, "ai_gateway")
 
 # ===== 工具函数 =====
 

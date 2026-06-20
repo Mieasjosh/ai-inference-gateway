@@ -32,6 +32,10 @@ public:
     //优雅关闭链接
     int OPT_LINGER;
 
+    //推理引擎选择
+    char *engine_type;       // "mock" 或 "onnx"
+    char *model_path;        // ONNX 模型路径（engine_type=onnx 时使用）
+
     //推理调度相关
     int batch_window_ms;        // 攒 batch 最大等待时间（毫秒）
     int max_batch_size;         // 单批最大请求数

@@ -23,6 +23,8 @@ int main(int argc, char *argv[])
     server.m_max_batch_size = config.max_batch_size;
     server.m_max_concurrent_batches = config.max_concurrent_batches;
     server.m_max_queue_size = config.max_queue_size;
+    server.m_engine_type = config.engine_type;
+    server.m_model_path = config.model_path;
 
     // 日志模块
     server.log_write();

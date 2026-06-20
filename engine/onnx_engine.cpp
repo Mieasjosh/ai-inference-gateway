@@ -131,11 +131,10 @@ std::vector<InferenceResult> OnnxEngine::infer_batch(
         // 3. 执行推理
         const char *input_names[] = {input_name_};
         const char *output_names[] = {output_name_};
-        Ort::Value *input_tensors[] = {&input_tensor};
 
         auto output_tensors = session_->Run(
             *run_opts_,
-            input_names, input_tensors, 1,
+            input_names, &input_tensor, 1,
             output_names, 1);
 
         // 4. 提取输出数据
@@ -262,14 +261,15 @@ bool OnnxEngine::extract_model_metadata()
     if (session_->GetInputCount() < 1) return false;
     if (session_->GetOutputCount() < 1) return false;
 
-    // 输入名
-    char *raw_name = session_->GetInputName(0, allocator);
-    if (!raw_name) return false;
-    size_t name_len = std::strlen(raw_name) + 1;
-    input_name_buf_.reset(new char[name_len]);
-    std::memcpy(input_name_buf_.get(), raw_name, name_len);
-    input_name_ = input_name_buf_.get();
-    allocator.Free(raw_name);
+    // 输入名：GetInputNameAllocated 返回 AllocatedStringPtr，拷贝到独立 buffer
+    {
+        auto name = session_->GetInputNameAllocated(0, allocator);
+        if (!name) return false;
+        size_t len = std::strlen(name.get()) + 1;
+        input_name_buf_.reset(new char[len]);
+        std::memcpy(input_name_buf_.get(), name.get(), len);
+        input_name_ = input_name_buf_.get();
+    }
 
     // 输入 shape
     Ort::TypeInfo input_type = session_->GetInputTypeInfo(0);
@@ -289,13 +289,14 @@ bool OnnxEngine::extract_model_metadata()
     }
 
     // ---- 输出信息 ----
-    raw_name = session_->GetOutputName(0, allocator);
-    if (!raw_name) return false;
-    name_len = std::strlen(raw_name) + 1;
-    output_name_buf_.reset(new char[name_len]);
-    std::memcpy(output_name_buf_.get(), raw_name, name_len);
-    output_name_ = output_name_buf_.get();
-    allocator.Free(raw_name);
+    {
+        auto name = session_->GetOutputNameAllocated(0, allocator);
+        if (!name) return false;
+        size_t len = std::strlen(name.get()) + 1;
+        output_name_buf_.reset(new char[len]);
+        std::memcpy(output_name_buf_.get(), name.get(), len);
+        output_name_ = output_name_buf_.get();
+    }
 
     Ort::TypeInfo output_type = session_->GetOutputTypeInfo(0);
     auto output_tensor_info = output_type.GetTensorTypeAndShapeInfo();
