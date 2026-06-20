@@ -42,8 +42,11 @@ wsl bash -c "curl -s -X POST http://127.0.0.1:9999/infer -H 'Content-Type: appli
 # 4. Python 测试套件（端到端：单请求/顺序/并发/错误处理/超时/优先级/队列过载/并发限流）
 wsl bash -c "cd '/mnt/e/AI coding/C++/C++ai' && python3 test_phase3.py"
 
-# 5. 停止服务
-wsl bash -c "kill \$(ps aux | grep 'ai_gateway -p 9999' | grep -v grep | awk '{print \$2}')"
+# 5. 压测对比（单请求 vs 批处理 QPS）
+wsl bash -c "cd '/mnt/e/AI coding/C++/C++ai' && python3 benchmark.py"
+
+# 6. 停止服务
+wsl bash -c "kill \$(ps aux | grep ai_gateway | grep -v grep | awk '{print \$2}')"
 ```
 
 **注意：** WSL 中的 Python3 使用 `json.dumps` 默认在 `:` 后加空格。HTTP JSON 解析器已兼容此格式。
@@ -136,9 +139,9 @@ worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信
 - ✅ **config→engine 配置链路**：`engine_latency_ms`/`batch_window_ms`/`max_batch_size`/`max_concurrent_batches`(`-C`)/`max_queue_size`(`-Q`) 不再硬编码，由 Config → WebServer 成员 → 引擎/调度器
 - ✅ **优先级调度**：客户端通过 JSON `"priority"` 字段指定任务优先级（0=高/1=中/2=低），调度器高→中→低出队。新增积累窗口确保并发任务在首次收集前充分入队，使优先级排序生效
 - ✅ **并发限流**：`max_concurrent_batches`(`-C`) 限制同时推理的 batch 数（GPU 并发上限），用 `sem_timedwait` 替代忙等轮询。`max_queue_size`(`-Q`) 限制调度队列长度，超限返回 HTTP 503。batch 完成时主动唤醒被限流阻塞的调度线程
+- ✅ **压测对比**：`benchmark.py` 三模式（顺序基线 / 低并发 / 高并发）QPS + 延迟分位数 + 加速比。实测 engine=50ms/batch=4 时加速比 7.8x（13.8 → 106.8 QPS），engine=100ms/batch=8 时 7.9x（8.1 → 64.3 QPS）
 
 ### 待实现
-- [ ] 压测对比（单请求 vs 批处理 QPS）
 - [ ] 下载 onnxruntime SDK 并启用 `HAS_ONNXRUNTIME` 编译宏进行真实推理测试
 
 ### 已知 warning
