@@ -33,10 +33,12 @@ public:
     int OPT_LINGER;
 
     //推理调度相关
-    int batch_window_ms;     // 攒 batch 最大等待时间（毫秒）
-    int max_batch_size;      // 单批最大请求数
-    int engine_latency_ms;   // 模拟推理引擎延迟（毫秒）
-    int task_timeout_sec;    // 推理任务超时时间（秒）
+    int batch_window_ms;        // 攒 batch 最大等待时间（毫秒）
+    int max_batch_size;         // 单批最大请求数
+    int max_concurrent_batches; // 同时推理的最大 batch 数（GPU 并发上限）
+    int max_queue_size;         // 调度队列最大长度（0=无限制），超限返回 503
+    int engine_latency_ms;      // 模拟推理引擎延迟（毫秒）
+    int task_timeout_sec;       // 推理任务超时时间（秒）
 
     //线程池内的线程数量
     int thread_num;

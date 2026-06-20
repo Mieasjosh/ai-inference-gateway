@@ -6,6 +6,7 @@ BatchScheduler::BatchScheduler()
     : batch_window_ms_(10),
       max_batch_size_(8),
       max_concurrent_batches_(2),
+      max_queue_size_(0),
       active_batch_count_(0),
       engine_(nullptr),
       running_(false),
@@ -40,16 +41,29 @@ void BatchScheduler::stop()
     // 简单等待：生产环境中应等待线程实际退出
 }
 
-void BatchScheduler::enqueue(InferenceTask *task)
+void BatchScheduler::set_max_concurrent_batches(int n)
 {
-    // 分配唯一 ID
+    max_concurrent_batches_ = (n > 0) ? n : 1;
+}
+
+bool BatchScheduler::enqueue(InferenceTask *task)
+{
     queue_lock_.lock();
+
+    // 队列上限检查（0 = 无限制）
+    if (max_queue_size_ > 0) {
+        int pending = queue_high_.size() + queue_mid_.size() + queue_low_.size();
+        if (pending >= max_queue_size_) {
+            queue_lock_.unlock();
+            return false;
+        }
+    }
+
+    // 分配唯一 ID
     task->task_id = next_task_id_++;
     task->arrival_time = time(nullptr);
-    queue_lock_.unlock();
 
     // 根据优先级入队
-    queue_lock_.lock();
     switch (task->priority) {
         case 0: queue_high_.push_back(task); break;
         case 2: queue_low_.push_back(task); break;
@@ -59,6 +73,7 @@ void BatchScheduler::enqueue(InferenceTask *task)
 
     // 通知调度线程有新任务
     queue_sem_.post();
+    return true;
 }
 
 int BatchScheduler::pending_count() const
@@ -129,9 +144,10 @@ void BatchScheduler::run()
 
         std::vector<InferenceTask *> batch = collect_batch();
         if (!batch.empty()) {
-            // 等待直到可以提交新 batch（并发限流）
+            // 并发限流：等待 batch 槽位释放
+            // execute_batch() 完成后 post queue_sem_ 唤醒此处
             while (running_ && active_batch_count_ >= max_concurrent_batches_) {
-                usleep(1000);  // 1ms 轮询等待
+                queue_sem_.timedwait(100);  // 100ms 超时，周期检查 running_
             }
 
             if (!running_) {
@@ -250,4 +266,7 @@ void BatchScheduler::execute_batch(const std::vector<InferenceTask *> &batch)
     queue_lock_.lock();
     --active_batch_count_;
     queue_lock_.unlock();
+
+    // 唤醒可能因并发限流而阻塞的调度线程
+    queue_sem_.post();
 }

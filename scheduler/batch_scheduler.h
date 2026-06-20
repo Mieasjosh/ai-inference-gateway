@@ -28,7 +28,8 @@ public:
     // === 配置参数（必须在 start() 之前设置） ===
     void set_batch_window_ms(int ms)   { batch_window_ms_ = ms; }
     void set_max_batch_size(int n)     { max_batch_size_ = n; }
-    void set_max_concurrent_batches(int n) { max_concurrent_batches_ = n; }
+    void set_max_concurrent_batches(int n);
+    void set_max_queue_size(int n)     { max_queue_size_ = n; }
 
     // === 生命周期 ===
 
@@ -43,7 +44,8 @@ public:
 
     // 提交一个推理任务到调度队列
     // 调用线程（worker）随后在 task->wait() 上阻塞，等待推理完成
-    void enqueue(InferenceTask *task);
+    // 返回 false 表示队列已满，调用方应返回 503
+    bool enqueue(InferenceTask *task);
 
     // 返回当前还在排队的任务数（不含正在推理的）
     int pending_count() const;
@@ -81,6 +83,7 @@ private:
     int batch_window_ms_;             // 攒 batch 的最大等待时间
     int max_batch_size_;              // 单个 batch 最大任务数
     int max_concurrent_batches_;      // 同时推理的 batch 数上限
+    int max_queue_size_;              // 调度队列最大长度（0=无限制）
 
     int active_batch_count_;          // 当前正在推理的 batch 数量
 

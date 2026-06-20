@@ -229,6 +229,118 @@ try:
 finally:
     kill_server(pri_proc)
 
+# === 8. 队列过载 → 503 ===
+print("\n=== 8. 队列过载测试 (max_queue_size=3) ===")
+# 策略：限制队列长度 3，发送 8 个并发请求
+# 前 3 个入队成功（worker 阻塞等待推理），后 5 个立即收到 503
+OV_URL = "http://127.0.0.1:9995/infer"
+
+print("  启动队列限流测试服务 (engine=200ms, queue_size=3)...")
+ov_proc = subprocess.Popen(
+    [exe, "-p", "9995", "-t", "12", "-s", "200",
+     "-T", "30", "-b", "20", "-n", "4", "-Q", "3", "-c", "1"],
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(1.5)
+
+try:
+    def infer_ov(payload):
+        data = json.dumps(payload, separators=(',', ':')).encode()
+        req = urllib.request.Request(OV_URL, data=data,
+            headers={"Content-Type": "application/json"})
+        start = time.time()
+        try:
+            resp = urllib.request.urlopen(req, timeout=15)
+            elapsed = time.time() - start
+            return json.loads(resp.read()), elapsed, resp.status
+        except urllib.error.HTTPError as e:
+            elapsed = time.time() - start
+            body = json.loads(e.read()) if e.code == 503 else {"status": "error", "msg": str(e.code)}
+            return body, elapsed, e.code
+
+    # 并发发送 8 个请求（队列只能容纳 3）
+    payload = {"model": "mock", "input": [1.0, 2.0, 3.0, 4.0]}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        futures = [ex.submit(infer_ov, payload) for _ in range(8)]
+        results = [f.result() for f in futures]
+
+    ok_count = 0
+    reject_count = 0
+    for r, elapsed, status in results:
+        if status == 200 and r.get("status") == "ok":
+            ok_count += 1
+            print(f"   HTTP {status}: ok, {elapsed*1000:.0f}ms")
+        elif status == 503:
+            reject_count += 1
+            print(f"   HTTP {status}: {r.get('msg', '')}, {elapsed*1000:.0f}ms")
+        else:
+            print(f"   HTTP {status}: unexpected, {elapsed*1000:.0f}ms")
+
+    check("至少 2 个请求成功入队", ok_count >= 2,
+          f"{ok_count} ok, {reject_count} rejected")
+    check("至少 2 个请求被 503 拒绝", reject_count >= 2,
+          f"{ok_count} ok, {reject_count} rejected")
+    check("成功数 + 拒绝数 = 总数", ok_count + reject_count == 8,
+          f"ok={ok_count}, reject={reject_count}, total=8")
+
+finally:
+    kill_server(ov_proc)
+
+# === 9. 并发 batch 限流 ===
+print("\n=== 9. 并发 batch 限流测试 (max_concurrent_batches=1) ===")
+# 策略：max_batch_size=2, max_concurrent_batches=1, engine_latency_ms=300
+# 发送 4 个请求 → 需要 2 个 batch
+# 第一批：2 个任务 ~300ms
+# 第二批：2 个任务 ~600ms（等第一批完成）
+CB_URL = "http://127.0.0.1:9994/infer"
+
+print("  启动并发限流测试服务 (engine=300ms, max_batch=2, max_concurrent=1)...")
+cb_proc = subprocess.Popen(
+    [exe, "-p", "9994", "-t", "10", "-s", "300",
+     "-T", "30", "-b", "20", "-n", "2", "-C", "1", "-c", "1"],
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(1.5)
+
+try:
+    def infer_cb(payload):
+        data = json.dumps(payload, separators=(',', ':')).encode()
+        req = urllib.request.Request(CB_URL, data=data,
+            headers={"Content-Type": "application/json"})
+        start = time.time()
+        resp = urllib.request.urlopen(req, timeout=15)
+        elapsed = time.time() - start
+        return json.loads(resp.read()), elapsed
+
+    payloads = [{"model": "mock", "input": [float(i)] * 4} for i in range(4)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [ex.submit(infer_cb, p) for p in payloads]
+        results = [f.result() for f in futures]
+
+    latencies = []
+    all_ok = True
+    for r, elapsed in results:
+        if r.get("status") != "ok":
+            all_ok = False
+        latencies.append(elapsed * 1000)
+        print(f"   status={r.get('status')}, {elapsed*1000:.0f}ms")
+
+    check("全部请求成功", all_ok)
+    check("共 4 个请求", len(latencies) == 4)
+
+    if len(latencies) >= 4:
+        latencies.sort()
+        fast = latencies[:2]   # 第一批（~300ms）
+        slow = latencies[2:]   # 第二批（~600ms）
+        avg_fast = sum(fast) / 2
+        avg_slow = sum(slow) / 2
+        print(f"   第一批平均延迟: {avg_fast:.0f}ms")
+        print(f"   第二批平均延迟: {avg_slow:.0f}ms")
+        # 串行 batch 执行，第二批延迟 ≈ 第一批 + engine_latency_ms
+        check("第二批延迟明显高于第一批", avg_slow > avg_fast + 150,
+              f"fast={avg_fast:.0f}ms, slow={avg_slow:.0f}ms")
+
+finally:
+    kill_server(cb_proc)
+
 # === 结果 ===
 print(f"\n{'='*40}")
 print(f"结果: {PASS} PASS, {FAIL} FAIL, {PASS+FAIL} total")

@@ -179,6 +179,7 @@ void http_conn::init()
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
     memset(m_real_file, '\0', FILENAME_LEN);
     memset(m_response_body, '\0', sizeof(m_response_body));
+    m_response_status = 200;
 }
 
 // ===== HTTP 解析（从原 web_server 保留） =====
@@ -387,7 +388,13 @@ http_conn::HTTP_CODE http_conn::do_request()
     task.client_fd = m_sockfd;
 
     // 3. 投递到调度器，阻塞等待结果（带超时）
-    scheduler->enqueue(&task);
+    // 队列满时返回 503，不阻塞等待
+    if (!scheduler->enqueue(&task)) {
+        snprintf(m_response_body, sizeof(m_response_body),
+                 "{\"status\":\"error\",\"msg\":\"server overloaded, queue full\"}");
+        m_response_status = 503;
+        return JSON_RESPONSE;
+    }
     task.wait_with_timeout_ms(task_timeout_sec * 1000);
 
     // 4. 构造 JSON 响应
@@ -561,7 +568,12 @@ bool http_conn::process_write(HTTP_CODE ret)
         break;
     case JSON_RESPONSE:
         // m_response_body 已在 do_request() 中填好，这里直接组装 HTTP 响应
-        add_status_line(200, ok_200_title);
+        // m_response_status 默认为 200，过载时被设为 503
+        if (m_response_status == 503) {
+            add_status_line(503, "Service Unavailable");
+        } else {
+            add_status_line(200, ok_200_title);
+        }
         add_response("Content-Type: application/json\r\n");
         add_content_length(strlen(m_response_body));
         add_linger();

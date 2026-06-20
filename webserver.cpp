@@ -5,6 +5,8 @@ WebServer::WebServer()
     m_engine_latency_ms = 50;
     m_batch_window_ms = 10;
     m_max_batch_size = 8;
+    m_max_concurrent_batches = 2;
+    m_max_queue_size = 0;
 
     users = new http_conn[MAX_FD];
 
@@ -77,7 +79,8 @@ void WebServer::thread_pool()
 
     m_scheduler.set_batch_window_ms(m_batch_window_ms);
     m_scheduler.set_max_batch_size(m_max_batch_size);
-    m_scheduler.set_max_concurrent_batches(2);
+    m_scheduler.set_max_concurrent_batches(m_max_concurrent_batches);
+    m_scheduler.set_max_queue_size(m_max_queue_size);
     m_scheduler.start(&m_engine);
 
     // 将调度器挂到 http_conn 的静态指针上，使每个连接都能访问

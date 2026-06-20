@@ -176,6 +176,7 @@ private:
     char *doc_root; //存网站根目录
 
     char m_response_body[1024]; // 推理 API 的 JSON 响应体（先写到这里，再拼 HTTP 响应）
+    int m_response_status;       // HTTP 响应状态码（默认 200，过载时 503）
 
     int m_TRIGMode;//ET是1，LT是0
     int m_close_log;

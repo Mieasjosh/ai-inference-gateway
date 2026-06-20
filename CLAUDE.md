@@ -39,7 +39,7 @@ wsl bash -c "cd '/mnt/e/AI coding/C++/C++ai' && nohup ./ai_gateway -p 9999 -t 8 
 # 3. curl 快速验证
 wsl bash -c "curl -s -X POST http://127.0.0.1:9999/infer -H 'Content-Type: application/json' -d '{\"model\":\"mock\",\"input\":[1.0,2.0,3.0,4.0]}'"
 
-# 4. Python 测试套件（端到端：单请求/顺序/并发/错误处理）
+# 4. Python 测试套件（端到端：单请求/顺序/并发/错误处理/超时/优先级/队列过载/并发限流）
 wsl bash -c "cd '/mnt/e/AI coding/C++/C++ai' && python3 test_phase3.py"
 
 # 5. 停止服务
@@ -67,8 +67,8 @@ HTTP 请求 → 网络接入层 → 推理任务调度层 → 推理引擎适配
 - **log**：同步/异步日志（block_queue 实现异步）
 
 ### 2. 推理任务调度层（核心新增，最大亮点）
-- **scheduler/inference_task**：推理任务结构体，包含输入/输出/超时/同步原语（pthread mutex + cond）
-- **scheduler/batch_scheduler**：动态批处理调度器，运行在独立线程。三级优先级队列 → 时间窗口攒 batch → 批量提交引擎 → 逐个唤醒 worker
+- **scheduler/inference_task**：推理任务结构体，包含输入/输出/超时/优先级/同步原语（pthread mutex + cond）。优先级 0=高 1=中(默认) 2=低，客户端通过 JSON `"priority"` 字段指定
+- **scheduler/batch_scheduler**：动态批处理调度器，运行在独立线程。三级优先级队列（高→中→低出队）→ 积累窗口等待任务入队 → 时间窗口攒 batch → 并发 batch 槽位限流（`-C`）→ 队列长度上限（`-Q`）→ 批量提交引擎 → 逐个唤醒 worker
 
 ### 3. 推理引擎适配层（新增，解耦设计）
 - **engine/engine_interface**：抽象接口 `IInferenceEngine`，定义 `init()` / `infer_batch()` / `get_model_info()` / `shutdown()`
@@ -96,7 +96,7 @@ HTTP 请求处理流程:
     → writev() 发送响应，epoll 监听到写就绪
 ```
 
-**已连线：** `/infer` → `do_request()` 解析 JSON body → 创建 `InferenceTask`（设置 deadline）→ `scheduler->enqueue()` + `task.wait_with_timeout_ms()` → `BatchScheduler` 攒 batch → deadline 过滤 → `MockEngine::infer_batch()` → 唤醒 worker → 写 JSON 响应。超时任务返回 `{"status":"error","msg":"inference timeout"}`。
+**已连线：** `/infer` → `do_request()` 解析 JSON body（`model`/`input`/`priority`）→ 创建 `InferenceTask`（设置 deadline）→ `scheduler->enqueue()`（队列满返回 false → HTTP 503） + `task.wait_with_timeout_ms()` → `BatchScheduler` 积累窗口 → 优先级出队攒 batch → deadline 过滤 → `MockEngine::infer_batch()` → 并发 batch 槽位控制 → 唤醒 worker → 写 JSON 响应。超时任务返回 `{"status":"error","msg":"inference timeout"}`，过载返回 HTTP 503 `{"status":"error","msg":"server overloaded, queue full"}`。
 
 ## 与原 web_server 的差异
 
@@ -112,14 +112,14 @@ HTTP 请求处理流程:
 | http_conn | `init()` 去掉了 user/passwd/sqlname 参数；`do_request()` 从文件/CGI 路由改为 `/infer` API 路由；去掉 upload 解析头 |
 | webserver | `init()` 去掉了数据库参数；`sql_pool()` 移除；构造函数不再初始化 upload_dir |
 | threadpool | 构造函数去掉 `connection_pool*`；`run()` 里去掉 `connectionRAII` |
-| config | `sql_num` 改为 `batch_window_ms` / `max_batch_size` / `engine_latency_ms` / `task_timeout_sec`；命令行新增 `-b` `-n` `-s` `-T` |
+| config | `sql_num` 改为 `batch_window_ms` / `max_batch_size` / `max_concurrent_batches` / `max_queue_size` / `engine_latency_ms` / `task_timeout_sec`；命令行新增 `-b` `-n` `-C` `-Q` `-s` `-T` |
 | main.cpp | 去掉数据库连接字符串；不再调用 `sql_pool()` |
 
 ## 线程模型
 
 - **主线程**：`eventLoop()` 跑 epoll_wait，分发 I/O 事件，处理 accept/信号/定时器
 - **worker 线程**（线程池）：执行 `http_conn::process()`（HTTP 解析 + 业务处理），通过 EPOLLONESHOT 保证同一 fd 不被多线程同时处理
-- **调度线程**：`BatchScheduler::run()`，从三级优先级队列取任务、组 batch、deadline 过滤、调用引擎推理、唤醒 worker。通过 `sem_timedwait()` 定期醒来清理过期任务（`cleanup_expired()`）
+- **调度线程**：`BatchScheduler::run()`，空闲后首次检测任务时等待积累窗口（`batch_window_ms`）让并发请求充分入队，然后按高→中→低优先级出队组 batch、deadline 过滤、等待 batch 槽位（并发限流 `-C`）、提交引擎推理、唤醒 worker。通过 `sem_timedwait()` 定期醒来清理过期任务（`cleanup_expired()`）
 - **exec 线程**（临时）：每个 batch 由独立 pthread 执行推理，避免阻塞调度循环
 
 worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信：worker 投递任务后 `task->wait_with_timeout_ms()` 阻塞等待（最多等 `task_timeout_sec` 秒）；调度线程推理完成后 `task->mark_done()` 唤醒。若超时，worker 侧 `pthread_cond_timedwait` 返回 `ETIMEDOUT`，调度器侧 `cleanup_expired()` / deadline 过滤也会标记超时并唤醒。
@@ -133,11 +133,11 @@ worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信
 - ✅ `http_conn::do_request()` → `BatchScheduler` → `MockEngine` 完整连线
 - ✅ **阶段三完成**：`OnnxEngine`（支持条件编译 stub/真实 onnxruntime）+ `ModelManager`（多模型路由）
 - ✅ **超时控制**：Worker 侧 `pthread_cond_timedwait` + Scheduler 侧 `cleanup_expired()` / deadline 过滤，毫秒级精度。配置项 `task_timeout_sec`（默认 30s，`-T` 参数）。未复用 lst_timer（lst_timer 是连接级超时，精度 5s 不适合任务级）
-- ✅ **config→engine 配置链路**：`engine_latency_ms`/`batch_window_ms`/`max_batch_size` 不再硬编码，由 Config → WebServer 成员 → 引擎/调度器
+- ✅ **config→engine 配置链路**：`engine_latency_ms`/`batch_window_ms`/`max_batch_size`/`max_concurrent_batches`(`-C`)/`max_queue_size`(`-Q`) 不再硬编码，由 Config → WebServer 成员 → 引擎/调度器
+- ✅ **优先级调度**：客户端通过 JSON `"priority"` 字段指定任务优先级（0=高/1=中/2=低），调度器高→中→低出队。新增积累窗口确保并发任务在首次收集前充分入队，使优先级排序生效
+- ✅ **并发限流**：`max_concurrent_batches`(`-C`) 限制同时推理的 batch 数（GPU 并发上限），用 `sem_timedwait` 替代忙等轮询。`max_queue_size`(`-Q`) 限制调度队列长度，超限返回 HTTP 503。batch 完成时主动唤醒被限流阻塞的调度线程
 
 ### 待实现
-- [ ] 优先级调度验证
-- [ ] 并发限流
 - [ ] 压测对比（单请求 vs 批处理 QPS）
 - [ ] 下载 onnxruntime SDK 并启用 `HAS_ONNXRUNTIME` 编译宏进行真实推理测试
 

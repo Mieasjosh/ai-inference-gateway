@@ -71,6 +71,8 @@ public:
     int m_engine_latency_ms;         // 模拟推理延迟
     int m_batch_window_ms;           // 批处理窗口
     int m_max_batch_size;            // 最大批大小
+    int m_max_concurrent_batches;    // 最大并发 batch 数
+    int m_max_queue_size;            // 调度队列最大长度
     MockEngine m_engine;             // 模拟推理引擎（阶段三可替换为 OnnxEngine）
     BatchScheduler m_scheduler;      // 动态批处理调度器
 };

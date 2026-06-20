@@ -21,6 +21,8 @@ int main(int argc, char *argv[])
     server.m_engine_latency_ms = config.engine_latency_ms;
     server.m_batch_window_ms = config.batch_window_ms;
     server.m_max_batch_size = config.max_batch_size;
+    server.m_max_concurrent_batches = config.max_concurrent_batches;
+    server.m_max_queue_size = config.max_queue_size;
 
     // 日志模块
     server.log_write();
