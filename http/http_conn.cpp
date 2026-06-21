@@ -5,6 +5,7 @@
 #include <string>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 
 // HTTP 响应状态文本
 const char *ok_200_title = "OK";
@@ -175,7 +176,10 @@ void http_conn::init()
     timer_flag = 0;
     improv = 0;
 
-    memset(m_read_buf, '\0', READ_BUFFER_SIZE);
+    // 动态分配读缓冲区（支持大模型输入，如 MobileNet 150K floats）
+    m_read_buf_size = READ_BUFFER_SIZE;
+    m_read_buf = new char[m_read_buf_size];
+    memset(m_read_buf, '\0', m_read_buf_size);
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
     memset(m_real_file, '\0', FILENAME_LEN);
     memset(m_response_body, '\0', sizeof(m_response_body));
@@ -212,20 +216,20 @@ http_conn::LINE_STATUS http_conn::parse_line()
 
 bool http_conn::read_once()
 {
-    if (m_read_idx >= READ_BUFFER_SIZE)
+    if (m_read_idx >= m_read_buf_size)
         return false;
     int bytes_read = 0;
 
     if (0 == m_TRIGMode) {  // LT
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx,
-                          READ_BUFFER_SIZE - m_read_idx, 0);
+                          m_read_buf_size - m_read_idx, 0);
         m_read_idx += bytes_read;
         if (bytes_read <= 0) return false;
         return true;
     } else {  // ET
         while (true) {
             bytes_read = recv(m_sockfd, m_read_buf + m_read_idx,
-                              READ_BUFFER_SIZE - m_read_idx, 0);
+                              m_read_buf_size - m_read_idx, 0);
             if (bytes_read == -1) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;
@@ -596,15 +600,23 @@ bool http_conn::process_write(HTTP_CODE ret)
 
 void http_conn::process()
 {
-    HTTP_CODE read_ret = process_read();
+    try {
+        HTTP_CODE read_ret = process_read();
 
-    if (read_ret == NO_REQUEST) {
-        modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
-        return;
-    }
+        if (read_ret == NO_REQUEST) {
+            modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+            return;
+        }
 
-    bool write_ret = process_write(read_ret);
-    if (!write_ret)
+        bool write_ret = process_write(read_ret);
+        if (!write_ret)
+            close_conn();
+        modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+    } catch (const std::exception &e) {
+        LOG_ERROR("http_conn::process exception: %s", e.what());
         close_conn();
-    modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+    } catch (...) {
+        LOG_ERROR("http_conn::process unknown exception");
+        close_conn();
+    }
 }

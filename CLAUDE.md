@@ -209,6 +209,23 @@ worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信
 ### 实现计划全部完成 ✅
 所有计划功能已实现，项目进入稳定阶段。
 
+### 真实模型支持
+
+已集成 MobileNet-v2 真实 ONNX 模型（`mobilenetv2-7-clean.onnx`，13.6MB，ImageNet 1000 分类）：
+
+- **Python 本地推理**（推荐 Demo）：`python demo_mobilenet.py [图片路径]` — 使用 Python onnxruntime 本地推理，无需启动 C++ 服务
+- **C++ 网关推理**（适合小模型）：`python demo_mobilenet.py --server http://127.0.0.1:9993/infer` — 通过 C++ 网关 HTTP 推理（当前仅支持小输入模型，如 test_model.onnx）
+- **自动化测试**（§10）：`test_phase3.py` 使用 `test_model.onnx` 验证 ONNX 推理链路
+
+**已知限制**：C++ 网关对大型输入（如 MobileNet 150K floats ≈ 0.6MB JSON）存在兼容性问题（连接被重置），原因是 HTTP 读缓冲区/JSON 解析在处理超大 body 时不完善。小模型（如 test_model.onnx 4 floats）正常工作。建议后续改进 read_once 的 ET 模式或流式解析。
+
+### 近期改动摘要
+
+- `http_conn.h/cpp`：`m_read_buf` 从静态数组改为动态分配（8MB），支持大模型输入；`process()` 添加异常捕获防止 worker 崩溃
+- `onnx_engine.h/cpp`：新增 `has_batch_dim_` 标记，兼容有/无 batch 维度的模型（如 `[4]` vs `[1,3,224,224]`）
+- `demo_mobilenet.py`：MobileNet-v2 图像分类 Demo（Python onnxruntime 本地推理 + 可选 C++ 网关模式）
+- `mobilenetv2-7-clean.onnx`：从 ONNX Model Zoo 下载并清理（移除 initializer 重复 input）的真实模型
+
 ### 已知 warning
 `lock/locker.h` 析构函数中 `throw std::exception()` 在 C++11 下触发 `-Wterminate`。不影响运行，后续统一处理。
 

@@ -33,9 +33,9 @@ class http_conn
 public:
     //设置读取文件的名称m_real_file大小
     static const int FILENAME_LEN=200;
-    //设置读缓冲区m_read_buf大小
-    static const int READ_BUFFER_SIZE=2048;
-    //设置写缓冲区m_read_buf大小
+    //设置读缓冲区默认大小（动态分配，支持大模型输入如 MobileNet 150K floats ~1.5MB JSON）
+    static const int READ_BUFFER_SIZE=8388608;  // 8MB
+    //设置写缓冲区m_write_buf大小
     static const int WRITE_BUFFER_SIZE=1024;
 
     //报文的请求方法，本项目只用到GET和POST
@@ -72,8 +72,8 @@ public:
     };
 
 public:
-    http_conn() {}
-    ~http_conn() {}
+    http_conn() : m_read_buf(nullptr), m_read_buf_size(0) {}
+    ~http_conn() { delete[] m_read_buf; }
 
 public:
     //初始化套接字地址，函数内部会调用私有方法init
@@ -138,8 +138,9 @@ private:
     int m_sockfd;
     sockaddr_in m_address;
 
-    //存储读取的请求报文数据
-    char m_read_buf[READ_BUFFER_SIZE]; 
+    //存储读取的请求报文数据（动态分配，支持大模型输入）
+    char *m_read_buf;
+    int m_read_buf_size;         // 当前分配的缓冲区大小 
 
     //缓冲区中m_read_buf中数据的最后一个字节的下一个位置
     long m_read_idx;

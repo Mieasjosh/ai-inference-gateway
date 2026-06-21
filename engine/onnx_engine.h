@@ -64,6 +64,7 @@ private:
 
     ModelInfo model_info_;
     bool initialized_;
+    bool has_batch_dim_;           // 模型是否已有 batch 维度（如 [1,3,224,224]）
 
     // 配置参数
     int num_threads_;

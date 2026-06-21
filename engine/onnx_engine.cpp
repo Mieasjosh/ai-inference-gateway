@@ -5,6 +5,7 @@
 
 OnnxEngine::OnnxEngine()
     : initialized_(false),
+      has_batch_dim_(false),
       num_threads_(1),
       optimization_level_(99),  // ORT_ENABLE_ALL
       input_pool_(nullptr),
@@ -116,9 +117,15 @@ std::vector<InferenceResult> OnnxEngine::infer_batch(
         std::vector<float> packed_input = pack_batch_input(batch);
         size_t batch_size = batch.size();
 
-        // 构造输入 shape：前面插入 batch 维度
+        // 构造输入 shape
+        // - 模型无 batch 维度（如 [4]）：前面插入 batch_size → [N, 4]
+        // - 模型有 batch 维度（如 [1,3,224,224]）：替换首维 → [N, 3, 224, 224]
         std::vector<int64_t> input_shape = model_info_.input_shape;
-        input_shape.insert(input_shape.begin(), static_cast<int64_t>(batch_size));
+        if (has_batch_dim_) {
+            input_shape[0] = static_cast<int64_t>(batch_size);
+        } else {
+            input_shape.insert(input_shape.begin(), static_cast<int64_t>(batch_size));
+        }
 
         // 2. 创建输入 tensor
         Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
@@ -202,6 +209,7 @@ void OnnxEngine::shutdown()
     output_name_ = nullptr;
 #endif
     initialized_ = false;
+    has_batch_dim_ = false;
 }
 
 // ===== private helpers =====
@@ -276,10 +284,16 @@ bool OnnxEngine::extract_model_metadata()
     auto input_tensor_info = input_type.GetTensorTypeAndShapeInfo();
     model_info_.input_shape = input_tensor_info.GetShape();
 
-    // 对于动态 batch 模型，首维可能是 -1 或 "batch_size"
-    // 替换为 1 作为单条默认 shape
+    // 对于动态 batch 模型，首维可能是 -1（表示可变 batch）
+    // 替换为 1 作为单条默认 shape，标记 has_batch_dim_
     if (!model_info_.input_shape.empty() && model_info_.input_shape[0] < 0) {
         model_info_.input_shape[0] = 1;
+        has_batch_dim_ = true;
+    }
+    // 静态 batch=1 的模型（如 [1,3,224,224]），已有 batch 维度
+    if (!model_info_.input_shape.empty() && model_info_.input_shape.size() > 1
+        && model_info_.input_shape[0] == 1) {
+        has_batch_dim_ = true;
     }
 
     // 计算单条输入的 float 数

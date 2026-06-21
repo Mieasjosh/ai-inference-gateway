@@ -4,3 +4,5 @@ server
 *_Serverlog
 onnxruntime-linux-x64-*
 test_model.onnx
+mobilenetv2-7.onnx
+__pycache__/
