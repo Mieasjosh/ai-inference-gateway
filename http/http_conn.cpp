@@ -311,7 +311,6 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
     if (m_read_idx >= (m_content_length + m_checked_idx)) {
         text[m_content_length] = '\0';
         // text 现在指向完整的 POST body（JSON 字符串）
-        // m_string 在原代码中指向这里，我们直接复用 m_url 来保存指针
         return GET_REQUEST;
     }
     return NO_REQUEST;
@@ -323,8 +322,12 @@ http_conn::HTTP_CODE http_conn::process_read()
     HTTP_CODE ret = NO_REQUEST;
     char *text = 0;
 
+    // 只在非 CONTENT 状态下才调用 parse_line()。
+    // CONTENT 状态下 body 可能不含 \r\n（如 JSON），parse_line()
+    // 会把 m_checked_idx 扫到 m_read_idx，导致 parse_content() 的
+    // 长度校验 (m_content_length + m_checked_idx) 永久无法满足。
     while ((m_check_state == CHECK_STATE_CONTENT && line_status == LINE_OK) ||
-           ((line_status = parse_line()) == LINE_OK)) {
+           (m_check_state != CHECK_STATE_CONTENT && (line_status = parse_line()) == LINE_OK)) {
         text = get_line();
         m_start_line = m_checked_idx;
 
@@ -350,7 +353,7 @@ http_conn::HTTP_CODE http_conn::process_read()
     return NO_REQUEST;
 }
 
-// ===== do_request —— 推理网关路由（连线 BatchScheduler + MockEngine）=====
+// ===== do_request —— 推理网关路由 =====
 
 http_conn::HTTP_CODE http_conn::do_request()
 {

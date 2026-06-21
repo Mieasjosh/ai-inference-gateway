@@ -217,14 +217,21 @@ worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信
 - **C++ 网关推理**（适合小模型）：`python demo_mobilenet.py --server http://127.0.0.1:9993/infer` — 通过 C++ 网关 HTTP 推理（当前仅支持小输入模型，如 test_model.onnx）
 - **自动化测试**（§10）：`test_phase3.py` 使用 `test_model.onnx` 验证 ONNX 推理链路
 
-**已知限制**：C++ 网关对大型输入（如 MobileNet 150K floats ≈ 0.6MB JSON）存在兼容性问题（连接被重置），原因是 HTTP 读缓冲区/JSON 解析在处理超大 body 时不完善。小模型（如 test_model.onnx 4 floats）正常工作。建议后续改进 read_once 的 ET 模式或流式解析。
+**已知限制**：`m_response_body[1024]` 对 MobileNet 这类 1000 类输出不够（~15KB），当前仅适用于小输出模型（如 test_model.onnx 4 floats）。后续需改为动态分配或直接写入 `m_write_buf`。
+
+**已修复**：大输入请求断开连接问题（`docs/bug-large-request-disconnect.md`）。根因是 `process_read()` 的 while 循环在 body 不完整时调用 `parse_line()` 扫描 body 内容，把 `m_checked_idx` 从正确的 body 起始位置污染到 `m_read_idx`，导致 `parse_content()` 的长度校验永久无法满足。
 
 ### 近期改动摘要
 
+- `http_conn.cpp::process_read()`：修复大请求 body 导致连接断开的 bug。while 循环在 body 不完整时会调用 `parse_line()` 扫描 body，把 `m_checked_idx` 污染到 `m_read_idx`，导致 `parse_content()` 永久判定 body 未收齐。修复：CONTENT 状态下不再调用 `parse_line()`。详见 `docs/bug-large-request-disconnect.md`
 - `http_conn.h/cpp`：`m_read_buf` 从静态数组改为动态分配（8MB），支持大模型输入；`process()` 添加异常捕获防止 worker 崩溃
 - `onnx_engine.h/cpp`：新增 `has_batch_dim_` 标记，兼容有/无 batch 维度的模型（如 `[4]` vs `[1,3,224,224]`）
 - `demo_mobilenet.py`：MobileNet-v2 图像分类 Demo（Python onnxruntime 本地推理 + 可选 C++ 网关模式）
 - `mobilenetv2-7-clean.onnx`：从 ONNX Model Zoo 下载并清理（移除 initializer 重复 input）的真实模型
+
+### §7 优先级测试偶发失败说明
+
+不是调度器逻辑缺陷，是测试层面竞态：`ThreadPoolExecutor` 并发提交的任务到达服务端的顺序不受 OS 线程调度保证。`batch_window=20ms` 窗口内，如果高优任务还没到达就被 `collect_batch()` 跳过，它会落到下一批，表现为延迟反而高于低优任务。这在任何系统上都可能偶发，WSL2 只是放大了线程调度抖动。
 
 ### 已知 warning
 `lock/locker.h` 析构函数中 `throw std::exception()` 在 C++11 下触发 `-Wterminate`。不影响运行，后续统一处理。
