@@ -159,6 +159,10 @@ void http_conn::init(int sockfd, const sockaddr_in &addr, char *root,
 
 void http_conn::init()
 {
+    // 释放旧缓冲区（连接复用时 delete[] nullptr 安全）
+    delete[] m_write_buf;
+    delete[] m_response_body;
+
     bytes_to_send = 0;
     bytes_have_send = 0;
     m_check_state = CHECK_STATE_REQUESTLINE;
@@ -176,13 +180,21 @@ void http_conn::init()
     timer_flag = 0;
     improv = 0;
 
-    // 动态分配读缓冲区（支持大模型输入，如 MobileNet 150K floats）
+    // 动态分配读缓冲区（支持大模型输入，如 MobileNet 150K floats ~1.5MB JSON）
     m_read_buf_size = READ_BUFFER_SIZE;
     m_read_buf = new char[m_read_buf_size];
     memset(m_read_buf, '\0', m_read_buf_size);
-    memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
+
+    // 动态分配写缓冲区和响应体缓冲区（支持大模型输出，如 MobileNet 1000 floats ~15KB JSON）
+    m_write_buf_size = INIT_BUFFER_SIZE;
+    m_write_buf = new char[m_write_buf_size];
+    memset(m_write_buf, '\0', m_write_buf_size);
+
+    m_response_body_size = INIT_BUFFER_SIZE;
+    m_response_body = new char[m_response_body_size];
+    memset(m_response_body, '\0', m_response_body_size);
+
     memset(m_real_file, '\0', FILENAME_LEN);
-    memset(m_response_body, '\0', sizeof(m_response_body));
     m_response_status = 200;
 }
 
@@ -371,8 +383,7 @@ http_conn::HTTP_CODE http_conn::do_request()
 
     // 如果调度器未初始化，回退到错误响应
     if (!scheduler) {
-        snprintf(m_response_body, sizeof(m_response_body),
-                 "{\"status\":\"error\",\"msg\":\"scheduler not initialized\"}");
+        set_response_body("{\"status\":\"error\",\"msg\":\"scheduler not initialized\"}");
         return JSON_RESPONSE;
     }
 
@@ -381,8 +392,7 @@ http_conn::HTTP_CODE http_conn::do_request()
     std::string model_name = json_get_string(body, "model");
 
     if (input_data.empty()) {
-        snprintf(m_response_body, sizeof(m_response_body),
-                 "{\"status\":\"error\",\"msg\":\"missing or empty 'input' field\"}");
+        set_response_body("{\"status\":\"error\",\"msg\":\"missing or empty 'input' field\"}");
         return JSON_RESPONSE;
     }
 
@@ -397,21 +407,20 @@ http_conn::HTTP_CODE http_conn::do_request()
     // 3. 投递到调度器，阻塞等待结果（带超时）
     // 队列满时返回 503，不阻塞等待
     if (!scheduler->enqueue(&task)) {
-        snprintf(m_response_body, sizeof(m_response_body),
-                 "{\"status\":\"error\",\"msg\":\"server overloaded, queue full\"}");
+        set_response_body("{\"status\":\"error\",\"msg\":\"server overloaded, queue full\"}");
         m_response_status = 503;
         return JSON_RESPONSE;
     }
     task.wait_with_timeout_ms(task_timeout_sec * 1000);
 
-    // 4. 构造 JSON 响应
+    // 4. 构造 JSON 响应（使用 std::string 自动管理长度）
     if (task.timeout) {
-        snprintf(m_response_body, sizeof(m_response_body),
-                 "{\"status\":\"error\",\"msg\":\"inference timeout\"}");
+        set_response_body("{\"status\":\"error\",\"msg\":\"inference timeout\"}");
     } else if (!task.success) {
-        snprintf(m_response_body, sizeof(m_response_body),
-                 "{\"status\":\"error\",\"msg\":\"%s\"}",
-                 task.error_msg.empty() ? "inference failed" : task.error_msg.c_str());
+        std::string err_body = "{\"status\":\"error\",\"msg\":\"";
+        err_body += task.error_msg.empty() ? "inference failed" : task.error_msg.c_str();
+        err_body += "\"}";
+        set_response_body(err_body);
     } else {
         // 拼接输出数组
         std::string out = "[";
@@ -423,12 +432,32 @@ http_conn::HTTP_CODE http_conn::do_request()
         }
         out += "]";
 
-        snprintf(m_response_body, sizeof(m_response_body),
-                 "{\"status\":\"ok\",\"model\":\"%s\",\"output\":%s}",
-                 task.model_name.c_str(), out.c_str());
+        std::string body_str = "{\"status\":\"ok\",\"model\":\"";
+        body_str += task.model_name;
+        body_str += "\",\"output\":";
+        body_str += out;
+        body_str += "}";
+        set_response_body(body_str);
     }
 
     return JSON_RESPONSE;
+}
+
+// ===== set_response_body —— 将响应体写入动态缓冲区（自动扩容） =====
+
+void http_conn::set_response_body(const std::string &body)
+{
+    size_t needed = body.size() + 1;
+    if (needed > (size_t)m_response_body_size) {
+        delete[] m_response_body;
+        // 扩容到 2 的幂，至少满足 needed
+        size_t new_size = (size_t)m_response_body_size;
+        if (new_size == 0) new_size = INIT_BUFFER_SIZE;
+        while (new_size < needed) new_size *= 2;
+        m_response_body_size = (int)new_size;
+        m_response_body = new char[m_response_body_size];
+    }
+    strcpy(m_response_body, body.c_str());
 }
 
 // ===== 响应构造 =====
@@ -487,19 +516,40 @@ bool http_conn::write()
 
 bool http_conn::add_response(const char *format, ...)
 {
-    if (m_write_idx >= WRITE_BUFFER_SIZE) return false;
-
     va_list arg_list;
+
+    // 第一次尝试：用现有缓冲区格式化
     va_start(arg_list, format);
-    int len = vsnprintf(m_write_buf + m_write_idx,
-                        WRITE_BUFFER_SIZE - 1 - m_write_idx,
-                        format, arg_list);
-    if (len > WRITE_BUFFER_SIZE - 1 - m_write_idx) {
-        va_end(arg_list);
-        return false;
-    }
-    m_write_idx += len;
+    int space = m_write_buf_size - m_write_idx;
+    if (space < 1) space = 1;
+    int len = vsnprintf(m_write_buf + m_write_idx, space, format, arg_list);
     va_end(arg_list);
+
+    if (len < space) {
+        // 缓冲区够大，直接完成
+        m_write_idx += len;
+        return true;
+    }
+
+    // 缓冲区不足，扩容（至少 2 倍，循环直到够大）
+    int new_size = m_write_buf_size;
+    if (new_size == 0) new_size = INIT_BUFFER_SIZE;
+    while (new_size - m_write_idx <= len) new_size *= 2;
+
+    char *new_buf = new char[new_size];
+    if (m_write_buf) {
+        memcpy(new_buf, m_write_buf, m_write_idx);
+        delete[] m_write_buf;
+    }
+    m_write_buf = new_buf;
+    m_write_buf_size = new_size;
+
+    // 重新格式化（扩容后保证成功）
+    va_start(arg_list, format);
+    vsnprintf(m_write_buf + m_write_idx, m_write_buf_size - m_write_idx, format, arg_list);
+    va_end(arg_list);
+
+    m_write_idx += len;
     return true;
 }
 

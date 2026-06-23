@@ -35,8 +35,8 @@ public:
     static const int FILENAME_LEN=200;
     //设置读缓冲区默认大小（动态分配，支持大模型输入如 MobileNet 150K floats ~1.5MB JSON）
     static const int READ_BUFFER_SIZE=8388608;  // 8MB
-    //设置写缓冲区m_write_buf大小
-    static const int WRITE_BUFFER_SIZE=1024;
+    //写缓冲区和响应体初始大小（动态分配，按需扩容，支持大模型输出如 MobileNet 1000 floats ~15KB JSON）
+    static const int INIT_BUFFER_SIZE=65536;  // 64KB
 
     //报文的请求方法，本项目只用到GET和POST
     enum METHOD{GET=0,POST,HEAD,PUT,DELETE,TRACE,OPTIONS,CONNECT,PATH};
@@ -72,8 +72,10 @@ public:
     };
 
 public:
-    http_conn() : m_read_buf(nullptr), m_read_buf_size(0) {}
-    ~http_conn() { delete[] m_read_buf; }
+    http_conn() : m_read_buf(nullptr), m_read_buf_size(0),
+                 m_write_buf(nullptr), m_write_buf_size(0),
+                 m_response_body(nullptr), m_response_body_size(0) {}
+    ~http_conn() { delete[] m_read_buf; delete[] m_write_buf; delete[] m_response_body; }
 
 public:
     //初始化套接字地址，函数内部会调用私有方法init
@@ -127,6 +129,9 @@ private:
     bool add_linger();
     bool add_blank_line();
 
+    // 设置响应体到 m_response_body（自动扩容）
+    void set_response_body(const std::string &body);
+
 public:
     static int m_epollfd;
     static int m_user_count;
@@ -149,8 +154,9 @@ private:
     //m_read_buf中已经解析的字符个数,m_start_line是行在buffer中的起始位置，将该位置后面的数据赋给text
     int m_start_line;
 
-    //存储发出的响应报文数据
-    char m_write_buf[WRITE_BUFFER_SIZE];
+    //存储发出的响应报文数据（动态分配，按需扩容）
+    char *m_write_buf;
+    int m_write_buf_size;
     //指示buffer中的长度
     int m_write_idx;
 
@@ -176,7 +182,8 @@ private:
     int bytes_have_send;//已发送字节数
     char *doc_root; //存网站根目录
 
-    char m_response_body[1024]; // 推理 API 的 JSON 响应体（先写到这里，再拼 HTTP 响应）
+    char *m_response_body;       // 推理 API 的 JSON 响应体（动态分配，按需扩容）
+    int m_response_body_size;
     int m_response_status;       // HTTP 响应状态码（默认 200，过载时 503）
 
     int m_TRIGMode;//ET是1，LT是0

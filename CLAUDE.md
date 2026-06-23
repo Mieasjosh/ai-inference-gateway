@@ -214,15 +214,14 @@ worker 线程和调度线程之间通过 **InferenceTask 的条件变量**通信
 已集成 MobileNet-v2 真实 ONNX 模型（`mobilenetv2-7-clean.onnx`，13.6MB，ImageNet 1000 分类）：
 
 - **Python 本地推理**（推荐 Demo）：`python demo_mobilenet.py [图片路径]` — 使用 Python onnxruntime 本地推理，无需启动 C++ 服务
-- **C++ 网关推理**（适合小模型）：`python demo_mobilenet.py --server http://127.0.0.1:9993/infer` — 通过 C++ 网关 HTTP 推理（当前仅支持小输入模型，如 test_model.onnx）
+- **C++ 网关推理**：`python demo_mobilenet.py --server http://127.0.0.1:9993/infer` — 通过 C++ 网关 HTTP 推理（已支持大输出，见下方修复）
 - **自动化测试**（§10）：`test_phase3.py` 使用 `test_model.onnx` 验证 ONNX 推理链路
-
-**已知限制**：`m_response_body[1024]` 对 MobileNet 这类 1000 类输出不够（~15KB），当前仅适用于小输出模型（如 test_model.onnx 4 floats）。后续需改为动态分配或直接写入 `m_write_buf`。
 
 **已修复**：大输入请求断开连接问题（`docs/bug-large-request-disconnect.md`）。根因是 `process_read()` 的 while 循环在 body 不完整时调用 `parse_line()` 扫描 body 内容，把 `m_checked_idx` 从正确的 body 起始位置污染到 `m_read_idx`，导致 `parse_content()` 的长度校验永久无法满足。
 
 ### 近期改动摘要
 
+- `http_conn.h/cpp`：`m_response_body` 和 `m_write_buf` 从静态 1KB 数组改为动态分配（初始 64KB，按需自动扩容），支持大模型输出（如 MobileNet 1000 floats ~15KB JSON）。修复后 `demo_mobilenet.py --server` 可通过 C++ 网关正常推理，耗时约 220ms。详见 `docs/bug-large-output-truncation.md`
 - `http_conn.cpp::process_read()`：修复大请求 body 导致连接断开的 bug。while 循环在 body 不完整时会调用 `parse_line()` 扫描 body，把 `m_checked_idx` 污染到 `m_read_idx`，导致 `parse_content()` 永久判定 body 未收齐。修复：CONTENT 状态下不再调用 `parse_line()`。详见 `docs/bug-large-request-disconnect.md`
 - `http_conn.h/cpp`：`m_read_buf` 从静态数组改为动态分配（8MB），支持大模型输入；`process()` 添加异常捕获防止 worker 崩溃
 - `onnx_engine.h/cpp`：新增 `has_batch_dim_` 标记，兼容有/无 batch 维度的模型（如 `[4]` vs `[1,3,224,224]`）
