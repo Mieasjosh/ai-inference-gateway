@@ -77,38 +77,68 @@ make DEBUG=0       # 优化模式（-O2）
 make clean         # 清理
 ```
 
-## 运行
+## 使用
 
-### Mock 引擎（无需模型，y=2x 假结果）
+启动前确保已设置 `LD_LIBRARY_PATH` 指向 ONNX Runtime 动态库：
 
 ```bash
-# 启动服务
-LD_LIBRARY_PATH=./onnxruntime-linux-x64-1.19.2/lib ./ai_gateway -p 9999 -t 8
+export LD_LIBRARY_PATH=./onnxruntime-linux-x64-1.19.2/lib:$LD_LIBRARY_PATH
+```
 
-# 发送推理请求
+项目有三种运行方式，按需选择：
+
+### 场景 1：Mock 引擎 — 开发调试（无需模型文件）
+
+用 `usleep` 模拟推理延迟，返回 `input × 2` 假结果。**不依赖任何模型文件**，用于在无 GPU/模型的情况下开发和压测调度器。
+
+```bash
+# 启动（-E mock 是默认值，可省略）
+./ai_gateway -p 9999 -t 8
+
+# 测试
 curl -s -X POST http://127.0.0.1:9999/infer \
   -H 'Content-Type: application/json' \
   -d '{"model":"mock","input":[1.0,2.0,3.0,4.0]}'
-
-# 响应: {"status":"ok","output":[2.0,4.0,6.0,8.0]}
+# → {"status":"ok","output":[2.0,4.0,6.0,8.0]}
 ```
 
-### ONNX 真实推理
+### 场景 2：ONNX Runtime + test_model.onnx — 验证 ONNX 链路
+
+加载真实 ONNX 模型，走完整 `Ort::Session::Run()` 推理流程。`test_model.onnx` 是一个 1KB 小模型（y=2x），结果和 Mock 一致，用来验证 ONNX Runtime 集成是否正确。
 
 ```bash
-LD_LIBRARY_PATH=./onnxruntime-linux-x64-1.19.2/lib \
-  ./ai_gateway -p 9999 -t 8 -E onnx -M ./test_model.onnx
+# 启动
+./ai_gateway -p 9999 -t 8 -E onnx -M ./test_model.onnx
+
+# 测试（和 Mock 完全一样的调用方式）
+curl -s -X POST http://127.0.0.1:9999/infer \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"onnx","input":[1.0,2.0,3.0,4.0]}'
+# → {"status":"ok","output":[2.0,4.0,6.0,8.0]}
 ```
 
-### MobileNet-v2 图像分类 Demo
+### 场景 3：ONNX Runtime + MobileNet-v2 — 真实图像分类
+
+加载预训练的 MobileNet-v2 模型（13.6MB，ImageNet 1000 类），对图片进行分类。C++ 网关负责推理，Python 客户端负责图像预处理。
 
 ```bash
-# Python 本地推理（推荐，无需启动 C++ 服务）
-python demo_mobilenet.py cat.jpg
+# 1. 启动 C++ 推理网关（WSL / Linux）
+./ai_gateway -p 9993 -t 8 -E onnx -M ./mobilenetv2-7-clean.onnx
 
-# 通过 C++ 网关推理
-python demo_mobilenet.py --server http://127.0.0.1:9999/infer cat.jpg
+# 2. 发送图片进行推理（Windows 终端或另一个 shell）
+python demo_mobilenet.py --server http://127.0.0.1:9993/infer D:\photos\cat.jpg
+
+# 输出示例：
+# Top-5 分类结果:
+#    1. tabby                    0.8923
+#    2. tiger cat                0.0741
+#    3. Egyptian cat             0.0182
+#    4. lynx                     0.0054
+#    5. Persian cat              0.0031
+# 推理耗时: 245ms
 ```
+
+`demo_mobilenet.py` 负责：读取图片 → 缩放 224×224 → 归一化 → 转为 150528 个 float → POST 到网关 → 解析 Top-N 结果。不传图片路径则用随机噪声验证链路。
 
 ## CLI 参数
 
